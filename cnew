@@ -1,0 +1,4 @@
+#!/bin/zsh
+
+cmux workspace create --name "$1" --cwd "$HOME/Developer/2026" --focus true > /dev/null
+

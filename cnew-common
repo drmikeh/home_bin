@@ -1,0 +1,50 @@
+#!/bin/bash
+
+# Shared logic for cnew-project / cnew-learn.
+# Usage: cnew-common <base_dir> <project_name>
+
+# Example usage: run_cmd "ls -la" "workspace:41" "surface:86"
+run_cmd() {
+    local cmd="$1"
+    local workspace_ref="$2"
+    local surface_ref="$3"
+
+    # Send the command to the specified surface.
+    # The '\n' at the end simulates pressing the Enter key.
+    cmux send --workspace "$workspace_ref" --surface "$surface_ref" "$cmd"$'\n' > /dev/null
+}
+
+BASE_DIR=$1
+NEW_PROJECT=$2
+NEW_PROJECT_PATH=${BASE_DIR}/${NEW_PROJECT}
+
+# Create a new project
+mkdir ${NEW_PROJECT_PATH}
+
+# Mark the new folder as trusted so Claude Code skips the trust dialog
+CLAUDE_CONFIG=~/.claude.json
+jq --arg path "${NEW_PROJECT_PATH}" '
+  .projects[$path] = ((.projects[$path] // {
+    allowedTools: [],
+    mcpContextUris: [],
+    enabledMcpjsonServers: [],
+    disabledMcpjsonServers: [],
+    hasClaudeMdExternalIncludesApproved: false,
+    hasClaudeMdExternalIncludesWarningShown: false
+  }) + {hasTrustDialogAccepted: true})
+' "${CLAUDE_CONFIG}" > "${CLAUDE_CONFIG}.tmp" && mv -f "${CLAUDE_CONFIG}.tmp" "${CLAUDE_CONFIG}"
+
+# Create a new workspace and split right
+WORKSPACE=$(cmux workspace create --name ${NEW_PROJECT} --cwd ${NEW_PROJECT_PATH} --focus true)
+WORKSPACE_REF=$(echo ${WORKSPACE} | awk '{print $2}')
+LEFT_SURFACE_REF=$(cmux list-pane-surfaces --workspace "${WORKSPACE_REF}" --json | jq -r '.surfaces[0].ref')
+RIGHT_SURFACE_REF=$(cmux new-split right --workspace "${WORKSPACE_REF}" | awk '{print $2}')
+
+# Run Claude in the left surface
+run_cmd "claude" ${WORKSPACE_REF} ${LEFT_SURFACE_REF}
+
+# Run echo a message in the right surface
+run_cmd "git init" ${WORKSPACE_REF} ${RIGHT_SURFACE_REF}
+
+# Notify yourself when a task is done
+cmux notify --title "Let's Go" --body "Ready to rock!" > /dev/null
